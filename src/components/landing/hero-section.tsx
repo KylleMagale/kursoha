@@ -15,9 +15,6 @@ import {
   Menu,
   X,
   ArrowRight,
-  Eye,
-  Plus,
-  Minus,
 } from "lucide-react"
 import GradientWaves from "@/components/ui/gradient-waves"
 
@@ -1186,7 +1183,7 @@ export default function HeroSection() {
             {[
               { value: "<30 sec", label: "per tailored application" },
               { value: "₱0", label: "no subscription, ever" },
-              { value: "5", label: "templates, built for PH careers" },
+              { value: "8", label: "templates, built for PH careers" },
             ].map((stat, i) => (
               <motion.div
                 key={stat.label}
