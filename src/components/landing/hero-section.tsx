@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useState, useEffect, useCallback } from "react"
 import type React from "react"
 import {
@@ -15,6 +16,13 @@ import {
   Menu,
   X,
   ArrowRight,
+  UserCircle2,
+  ScanSearch,
+  Sparkles,
+  SendHorizontal,
+  MousePointerClick,
+  FileEdit,
+  ClipboardCheck,
 } from "lucide-react"
 import GradientWaves from "@/components/ui/gradient-waves"
 
@@ -28,6 +36,14 @@ const NAV_LINKS = [
   { label: "How it works", href: "#how-it-works" },
   { label: "Extension", href: "#extension" },
 ]
+
+// Dedicated image for the hero's single visual — separate from TEMPLATES
+// since the showcase carousel below needs the full name/tagline/tags/description
+// on every item, but the hero visual only ever needs an image.
+const HERO_TEMPLATE = {
+  id: 9,
+  image: "/resume-templates/ats.jpg",
+}
 
 const TEMPLATES = [
   {
@@ -166,13 +182,14 @@ function HeroNav() {
       }`}
     >
       <div className="max-w-[1180px] mx-auto px-6 sm:px-7 py-4 flex items-center justify-between">
-        <motion.span
-          className="text-xl font-semibold text-[#0F1E38]"
+        <motion.div
           whileHover={{ scale: 1.05 }}
           transition={{ type: "spring", stiffness: 400, damping: 17 }}
         >
-          Kursoha
-        </motion.span>
+          <Link href="/" aria-label="Kursoha home" className="inline-flex items-center">
+            <img src="/logo.svg" alt="Kursoha" className="h-15 w-auto" />
+          </Link>
+        </motion.div>
 
         <div className="hidden md:flex items-center gap-8">
           {NAV_LINKS.map((item, i) => (
@@ -477,7 +494,7 @@ function TemplateShowcase() {
                   ? undefined
                   : "exit"
               }
-              className="relative w-full max-w-xl"
+              className="relative w-full max-w-3xl"
               style={{
                 perspective: 1000,
               }}
@@ -486,7 +503,7 @@ function TemplateShowcase() {
                 className="
                   bg-white
                   rounded-3xl
-                  p-5 sm:p-7
+                  p-6 sm:p-8
                   border-2
                   border-[#1B2A4A]/8
                   shadow-xl
@@ -503,7 +520,7 @@ function TemplateShowcase() {
                 onMouseMove={handleMouseMove}
                 onMouseLeave={handleMouseLeave}
               >
-                <div className="grid sm:grid-cols-2 gap-5 sm:gap-6 items-center">
+                <div className="grid sm:grid-cols-2 gap-6 items-center">
 
                   {/* ========================================================= */}
                   {/* CLICKABLE RESUME PREVIEW                                  */}
@@ -1055,6 +1072,229 @@ function TemplateShowcase() {
 }
 
 // ---------------------------------------------------------------------------
+// How It Works + Extension — two-part section covering the site workflow
+// and the Chrome extension specifically, giving the nav's #how-it-works and
+// #extension links real scroll targets. Reuses the same fadeUp stagger
+// pattern from the hero, plus two animation types not used elsewhere yet:
+// a horizontal line-reveal under each eyebrow (scaleX), and an icon-pulse
+// hover effect on each step/feature icon.
+// ---------------------------------------------------------------------------
+const steps = [
+  { icon: UserCircle2, title: "Set up your profile", description: "Add your skills, work history, and target market once." },
+  { icon: ScanSearch, title: "Extension scrapes the post", description: "It reads the job title, company, and description from the page." },
+  { icon: Sparkles, title: "AI tailors your resume", description: "Bullet points and a cover message generated for that exact posting." },
+  { icon: SendHorizontal, title: "Apply, then track", description: "Auto-filled, submitted, and logged so you see what's working." },
+]
+
+const extensionFeatures = [
+  { icon: MousePointerClick, title: "One-click scrape", description: "Click the extension on any supported job board to pull the posting instantly." },
+  { icon: FileEdit, title: "Tailored on the spot", description: "Bullet points rewrite themselves around that specific job, right in the popup." },
+  { icon: ClipboardCheck, title: "Auto-fill & log", description: "Fields fill in automatically, and the application is saved to your dashboard." },
+]
+
+function SectionEyebrow({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center mb-4">
+      <span className="text-[#1170CD] text-sm font-semibold tracking-[0.15em] uppercase">
+        {label}
+      </span>
+      <motion.span
+        className="h-0.5 bg-[#1170CD] mt-2 origin-center"
+        initial={{ scaleX: 0, width: 40 }}
+        whileInView={{ scaleX: 1 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+      />
+    </div>
+  )
+}
+
+function HowItWorksSection() {
+  const prefersReducedMotion = useReducedMotion()
+
+  return (
+    <>
+      <section id="how-it-works" className="relative bg-[#EFF2F9] py-20 sm:py-28">
+        <div className="max-w-[1180px] mx-auto px-6 sm:px-7">
+          <div className="text-center mb-14">
+            <SectionEyebrow label="How It Works" />
+            <h2 className="text-3xl sm:text-4xl font-bold text-[#0F1E38] mt-2">
+              From job post to submitted application
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {steps.map((step, i) => (
+              <motion.div
+                key={step.title}
+                initial={prefersReducedMotion ? undefined : { opacity: 0, y: 24 }}
+                whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: i * 0.1 }}
+                className="group relative bg-white rounded-2xl p-6 border-2 border-transparent hover:border-[#1170CD]/25 shadow-sm hover:shadow-lg transition-all duration-300"
+              >
+                <span className="absolute top-4 right-5 text-xs font-semibold text-[#1B2A4A]/20">
+                  0{i + 1}
+                </span>
+                <motion.div
+                  className="w-12 h-12 rounded-xl bg-[#1170CD] flex items-center justify-center mb-4"
+                  whileHover={prefersReducedMotion ? undefined : { scale: 1.1 }}
+                  animate={
+                    prefersReducedMotion
+                      ? undefined
+                      : { boxShadow: ["0 0 0 0px rgba(17,112,205,0.15)", "0 0 0 8px rgba(17,112,205,0)"] }
+                  }
+                  transition={
+                    prefersReducedMotion
+                      ? undefined
+                      : { boxShadow: { duration: 1.8, repeat: Infinity, ease: "easeOut" } }
+                  }
+                >
+                  <step.icon className="w-6 h-6 text-white" />
+                </motion.div>
+                <h3 className="text-base font-semibold text-[#0F1E38] mb-1.5">{step.title}</h3>
+                <p className="text-sm text-[#425066] leading-relaxed">{step.description}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="extension" className="relative bg-white py-20 sm:py-28">
+        <div className="max-w-[1180px] mx-auto px-6 sm:px-7 grid lg:grid-cols-2 gap-12 items-center">
+          <div>
+            <SectionEyebrow label="Chrome Extension" />
+            <h2 className="text-3xl sm:text-4xl font-bold text-[#0F1E38] mt-2 mb-5">
+              Your resume, tailored right where you&apos;re applying
+            </h2>
+            <div className="space-y-5">
+              {extensionFeatures.map((feature, i) => (
+                <motion.div
+                  key={feature.title}
+                  initial={prefersReducedMotion ? undefined : { opacity: 0, x: -20 }}
+                  whileInView={prefersReducedMotion ? undefined : { opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.5, delay: i * 0.12 }}
+                  className="flex gap-4"
+                >
+                  <motion.div
+                    className="shrink-0 w-11 h-11 rounded-xl bg-[#1170CD] flex items-center justify-center"
+                    whileHover={prefersReducedMotion ? undefined : { scale: 1.15 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                  >
+                    <feature.icon className="w-5 h-5 text-white" />
+                  </motion.div>
+                  <div>
+                    <h3 className="text-base font-semibold text-[#0F1E38] mb-1">{feature.title}</h3>
+                    <p className="text-sm text-[#425066] leading-relaxed">{feature.description}</p>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+
+          {/* Simple abstract browser mockup — not a real screenshot, since the
+              extension's actual popup UI isn't built yet. */}
+          <motion.div
+            initial={prefersReducedMotion ? undefined : { opacity: 0, scale: 0.9 }}
+            whileInView={prefersReducedMotion ? undefined : { opacity: 1, scale: 1 }}
+            viewport={{ once: true }}
+            transition={{ type: "spring", stiffness: 100, damping: 20 }}
+            className="relative"
+          >
+            <div className="rounded-2xl border-2 border-[#1B2A4A]/10 shadow-xl overflow-hidden bg-[#F7F8FB]">
+              <div className="flex items-center gap-1.5 px-4 py-3 bg-white border-b border-[#1B2A4A]/8">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#1B2A4A]/15" />
+                <span className="w-2.5 h-2.5 rounded-full bg-[#1B2A4A]/15" />
+                <span className="w-2.5 h-2.5 rounded-full bg-[#1B2A4A]/15" />
+              </div>
+              <div className="p-6 space-y-3">
+                <div className="h-3 w-2/3 rounded bg-[#1B2A4A]/10" />
+                <div className="h-3 w-1/2 rounded bg-[#1B2A4A]/10" />
+                <motion.div
+                  className="mt-4 h-10 rounded-lg bg-[#1170CD] flex items-center justify-center text-white text-sm font-semibold"
+                  whileHover={prefersReducedMotion ? undefined : { scale: 1.02 }}
+                >
+                  Scrape &amp; Tailor
+                </motion.div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Hero visual — a single resume template shown beside the headline, styled
+// like the reference's product-can treatment: glow behind, continuous gentle
+// float, and pointer-tracked 3D tilt. No carousel controls here — that lives
+// in the dedicated Templates section below.
+// ---------------------------------------------------------------------------
+function HeroResumeVisual() {
+  const prefersReducedMotion = useReducedMotion()
+  const featured = HERO_TEMPLATE
+
+  const rotateX = useSpring(0, { stiffness: 150, damping: 20 })
+  const rotateY = useSpring(0, { stiffness: 150, damping: 20 })
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (prefersReducedMotion) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const centerX = rect.left + rect.width / 2
+    const centerY = rect.top + rect.height / 2
+    rotateY.set(((e.clientX - centerX) / (rect.width / 2)) * 5)
+    rotateX.set(-((e.clientY - centerY) / (rect.height / 2)) * 5)
+  }
+
+  const handleMouseLeave = () => {
+    rotateX.set(0)
+    rotateY.set(0)
+  }
+
+  return (
+    <div className="relative flex justify-center">
+      <motion.div
+        initial={prefersReducedMotion ? undefined : { opacity: 0, scale: 0.85, rotate: -6 }}
+        animate={prefersReducedMotion ? undefined : { opacity: 1, scale: 1, rotate: 0 }}
+        transition={{ type: "spring", stiffness: 100, damping: 20, delay: 0.3 }}
+        className="relative w-full max-w-lg"
+      >
+        {!prefersReducedMotion && (
+          <motion.div
+            className="absolute inset-0 bg-[#6366F1]/25 blur-[90px] rounded-full scale-75"
+            animate={{ scale: [0.75, 0.85, 0.75], opacity: [0.3, 0.5, 0.3] }}
+            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+          />
+        )}
+
+        <motion.div
+          animate={prefersReducedMotion ? undefined : { y: [0, -14, 0] }}
+          transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+          style={{ perspective: 1000 }}
+        >
+          <motion.div
+            className="relative bg-white rounded-3xl p-4 border-2 border-[#1B2A4A]/8 shadow-xl"
+            style={prefersReducedMotion ? undefined : { rotateX, rotateY, transformStyle: "preserve-3d" }}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+          >
+            <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-[#F3F6FB]">
+              <img
+                src={featured.image}
+                alt={`${featured.name} resume template`}
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            </div>
+          </motion.div>
+        </motion.div>
+      </motion.div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Hero content — badge, two-line reveal headline, description, CTAs, and
 // the metrics row. Reordered on mobile via DOM order + grid placement:
 // mobile shows Text -> Visual -> Metrics; desktop shows a 2-column layout
@@ -1063,7 +1303,7 @@ function TemplateShowcase() {
 export default function HeroSection() {
   const prefersReducedMotion = useReducedMotion()
 
-  const headlineLines = ["Your career has a direction.", "Let's pursue it faster."]
+  const headlineLines = ["Apply ka work?", "Kursoha bataa"]
 
   return (
     <>
@@ -1102,17 +1342,6 @@ export default function HeroSection() {
         >
           {/* Text block: badge, headline, description, CTAs */}
           <div className="lg:col-start-1 lg:row-start-1">
-            <motion.div
-              initial={prefersReducedMotion ? undefined : { opacity: 0, y: 24 }}
-              animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-              transition={{ duration: 0.6 }}
-              className="inline-flex items-center gap-2 bg-[#1170CD]/10 px-3 py-1.5 rounded-full mb-5"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-[#1170CD]" />
-              <span className="text-[#1170CD] text-xs font-semibold tracking-[0.15em] uppercase">
-                Built for Filipino job seekers
-              </span>
-            </motion.div>
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl 2xl:text-7xl font-bold leading-[1.05] tracking-tight text-[#0F1E38] mb-5">
               {headlineLines.map((line, i) => (
@@ -1134,9 +1363,9 @@ export default function HeroSection() {
               animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.4 }}
               className="text-lg text-[#425066] leading-relaxed max-w-[46ch] mb-8"
-            >
-              Kursoha reads the job posting, tailors your resume, fills out the application, and tracks
-              what actually gets you interviews — whether you&apos;re staying local or going global.
+            >                                                 
+              Kursoha scans job descriptions, tailors your ATS resume instantly, auto-fills application forms, 
+              and tracks your interviews local or global.
             </motion.p>
 
             <motion.div
@@ -1166,7 +1395,7 @@ export default function HeroSection() {
                 whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
                 transition={{ type: "spring", stiffness: 400, damping: 17 }}
                 className="bg-white hover:bg-[#F3F6FB] border border-[#1B2A4A]/12 text-[#0F1E38] font-semibold px-6 py-3.5 rounded-lg transition-colors"
-              >
+                >
                 Browse templates
               </motion.button>
             </motion.div>
@@ -1174,31 +1403,20 @@ export default function HeroSection() {
 
           {/* Visual: template showcase — appears between CTAs and metrics on
               mobile (DOM order), beside them on desktop (grid placement). */}
-          <div className="order-none lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:self-center">
-            <TemplateShowcase />
-          </div>
-
-          {/* Metrics row */}
-          <div className="lg:col-start-1 lg:row-start-2 flex flex-wrap gap-7">
-            {[
-              { value: "<30 sec", label: "per tailored application" },
-              { value: "₱0", label: "no subscription, ever" },
-              { value: "8", label: "templates, built for PH careers" },
-            ].map((stat, i) => (
-              <motion.div
-                key={stat.label}
-                initial={prefersReducedMotion ? undefined : { opacity: 0, x: -16 }}
-                animate={prefersReducedMotion ? undefined : { opacity: 1, x: 0 }}
-                transition={{ duration: 0.5, delay: 0.6 + i * 0.1 }}
-                className="flex flex-col"
-              >
-                <span className="text-xl font-semibold text-[#0F1E38]">{stat.value}</span>
-                <span className="text-sm text-[#6B7A90]">{stat.label}</span>
-              </motion.div>
-            ))}
+          <div className="order-none lg:col-start-2 lg:row-start-1 lg:self-center">
+            <HeroResumeVisual />
           </div>
         </div>
       </section>
-    </>
-  )
+       <section id="templates" className="relative bg-[#EFF2F9] py-20 sm:py-28 overflow-hidden">
+        <div className="max-w-[1180px] mx-auto px-6 sm:px-7 text-center mb-12">
+          <span className="text-[#1170CD] text-xs font-semibold tracking-[0.15em] uppercase">
+            Our Templates
+          </span>
+        </div>
+        <TemplateShowcase />
+      </section>
+      <HowItWorksSection />
+    </>     
+  ) 
 }

@@ -7,5 +7,13 @@ export default async function DashboardPage() {
 
   if (!user) redirect('/login')
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (!profile) redirect('/onboarding')
+
   return <h1>Welcome, {user.email}</h1>
 }
