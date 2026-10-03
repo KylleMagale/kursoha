@@ -276,7 +276,7 @@ export default function OnboardingPage() {
                 <div className="space-y-5">
                   <h2 className="text-xl font-semibold text-[#0F1E38] mb-1">Skills & Experience</h2>
                   <p className="text-sm text-[#425066] mb-5">
-                    Kursoha's AI uses this to tailor bullet points to each job.
+                    Kursoha AI uses this to tailor bullet points to each job.
                   </p>
 
                   <Field label="Skills Summary" required error={errors.skills_summary}>

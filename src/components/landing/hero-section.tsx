@@ -1364,7 +1364,7 @@ export default function HeroSection() {
               transition={{ duration: 0.6, delay: 0.4 }}
               className="text-lg text-[#425066] leading-relaxed max-w-[46ch] mb-8"
             >                                                 
-              Kursoha scans job descriptions, tailors your ATS resume instantly, auto-fills application forms, 
+              Kursoha help you scans job descriptions, tailors your ATS resume instantly, auto-fills application forms, 
               and tracks your interviews local or global.
             </motion.p>
 
