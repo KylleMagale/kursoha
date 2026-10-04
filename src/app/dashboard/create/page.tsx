@@ -1,61 +1,38 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
-import { CheckCircle2, AlertTriangle, XCircle, Sparkles, Printer } from "lucide-react"
+import { AlertTriangle } from "lucide-react"
 import { createClient } from "@/utils/supabase/client"
-import Template1, { type ResumeData } from "@/components/resume/template1"
-import ResumePreview from "@/components/resume/resume-preview"
-
-// Place this file at: src/app/dashboard/create/page.tsx
+import type { JobEntryForm } from "@/app/onboarding/page"
+import type { ExperienceEntry } from "@/components/resume/template1"
 
 type MatchLevel = "Strong Match" | "Partial Match" | "Limited Match"
 
 interface TailorResult {
   matchLevel: MatchLevel
   matchNote: string
-  bulletPoints: string[]
+  experience: { bullets: string[] }[]
   introMessage: string
 }
 
-// Visual treatment per match level — standard semantic colors (green/amber/
-// red), not brand blue, since this is a status signal that needs to read
-// as distinct from the rest of the UI at a glance.
-const MATCH_STYLES: Record<
-  MatchLevel,
-  { bg: string; accent: string; text: string; iconBg: string; Icon: typeof CheckCircle2 }
-> = {
-  "Strong Match": {
-    bg: "bg-emerald-50",
-    accent: "bg-emerald-500",
-    text: "text-emerald-800",
-    iconBg: "bg-emerald-500",
-    Icon: CheckCircle2,
-  },
-  "Partial Match": {
-    bg: "bg-amber-50",
-    accent: "bg-amber-500",
-    text: "text-amber-800",
-    iconBg: "bg-amber-500",
-    Icon: AlertTriangle,
-  },
-  "Limited Match": {
-    bg: "bg-red-50",
-    accent: "bg-red-500",
-    text: "text-red-800",
-    iconBg: "bg-red-500",
-    Icon: XCircle,
-  },
+interface ProfileLite {
+  fullName: string
+  email: string
+  phone: string
+  skills: string
+  jobs: JobEntryForm[]
 }
 
 export default function CreateResumePage() {
+  const router = useRouter()
   const [jobDescription, setJobDescription] = useState("")
   const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
-  const [result, setResult] = useState<TailorResult | null>(null)
-  const [profile, setProfile] = useState<ResumeData | null>(null)
+  const [profile, setProfile] = useState<ProfileLite | null>(null)
 
-  // Load the saved onboarding profile so the Review step can render it.
   useEffect(() => {
     const loadProfile = async () => {
       const supabase = createClient()
@@ -64,7 +41,7 @@ export default function CreateResumePage() {
 
       const { data } = await supabase
         .from("profiles")
-        .select("full_name, phone, skills_summary, work_history")
+        .select("full_name, phone, skills_summary, work_experience")
         .eq("user_id", user.id)
         .maybeSingle()
 
@@ -74,7 +51,7 @@ export default function CreateResumePage() {
           email: user.email ?? "",
           phone: data.phone ?? "",
           skills: data.skills_summary ?? "",
-          workHistory: data.work_history ?? "",
+          jobs: Array.isArray(data.work_experience) ? data.work_experience : [],
         })
       }
     }
@@ -86,10 +63,13 @@ export default function CreateResumePage() {
       setError("Paste a job description first.")
       return
     }
+    if (!profile || profile.jobs.length === 0) {
+      setError("Add at least one job in Onboarding before tailoring.")
+      return
+    }
 
     setLoading(true)
     setError("")
-    setResult(null)
 
     try {
       const res = await fetch("/api/tailor", {
@@ -98,31 +78,87 @@ export default function CreateResumePage() {
         body: JSON.stringify({ jobDescription }),
       })
 
-      const data = await res.json()
+      const data: TailorResult & { error?: string } = await res.json()
 
       if (!res.ok) {
         setError(data.error || "Something went wrong.")
         return
       }
 
-      setResult(data)
+      // Zip the AI's bullets back onto the real job metadata — the AI
+      // never sees or returns title/company/location/dates, so those are
+      // always exactly what the user entered.
+      const tailoredExperience: ExperienceEntry[] = profile.jobs.map((job, i) => ({
+        title: job.title,
+        company: job.company,
+        location: job.location || undefined,
+        period: job.period || undefined,
+        bullets: data.experience[i]?.bullets ?? [],
+      }))
+
+      setSaving(true)
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (!user) {
+        setError("Your session expired. Please log in again.")
+        return
+      }
+
+      const { data: saved, error: saveError } = await supabase
+        .from("resume_versions")
+        .insert({
+          user_id: user.id,
+          job_description: jobDescription,
+          match_level: data.matchLevel,
+          match_note: data.matchNote,
+          tailored_experience: tailoredExperience,
+          intro_message: data.introMessage,
+          template_id: "template1",
+        })
+        .select("id")
+        .single()
+
+      if (saveError || !saved) {
+        console.error("Failed to save resume version:", saveError)
+        setError("Tailoring succeeded, but saving the result failed. Please try again.")
+        return
+      }
+
+      router.push(`/dashboard/review/${saved.id}`)
     } catch {
       setError("Network error. Check your connection and try again.")
     } finally {
       setLoading(false)
+      setSaving(false)
     }
   }
 
-  const matchStyle = result ? MATCH_STYLES[result.matchLevel] : null
+  const busy = loading || saving
 
   return (
     <div className="min-h-screen bg-[#EFF2F9] px-4 sm:px-6 py-8 sm:py-12">
-      <div className="max-w-2xl mx-auto">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        className="max-w-2xl mx-auto"
+      >
         <h1 className="text-2xl font-semibold text-[#0F1E38] mb-2">Tailor a Resume</h1>
         <p className="text-sm text-[#425066] mb-6">
           Paste a job description below. Kursoha will honestly assess the fit, then generate
-          tailored bullet points and a cover message using your profile.
+          tailored bullet points for each job using your profile.
         </p>
+
+        {profile && profile.jobs.length === 0 && (
+          <div className="mb-4 flex items-start gap-2 bg-amber-50 rounded-lg px-3.5 py-3">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-800 leading-relaxed">
+              You don&apos;t have any work experience saved yet. Add at least one job in
+              Onboarding first.
+            </p>
+          </div>
+        )}
 
         <div className="bg-white rounded-2xl border-2 border-[#1B2A4A]/8 shadow-sm p-6">
           <label className="block text-sm font-medium text-[#0F1E38] mb-1.5">
@@ -131,7 +167,8 @@ export default function CreateResumePage() {
           <textarea
             value={jobDescription}
             onChange={(e) => setJobDescription(e.target.value)}
-            className="w-full min-h-[180px] border-2 border-[#1B2A4A]/10 rounded-lg p-3 text-sm text-[#0F1E38] focus:outline-none focus:border-[#1170CD]"
+            disabled={busy}
+            className="w-full min-h-[180px] border-2 border-[#1B2A4A]/10 rounded-lg p-3 text-sm text-[#0F1E38] focus:outline-none focus:border-[#1170CD] disabled:opacity-60"
             placeholder="Paste the full job posting here..."
           />
 
@@ -140,126 +177,34 @@ export default function CreateResumePage() {
           <button
             type="button"
             onClick={handleTailor}
-            disabled={loading}
+            disabled={busy}
             className="mt-4 bg-[#1170CD] hover:bg-[#0F5FB3] text-white font-semibold px-6 py-2.5 rounded-lg transition-colors disabled:opacity-60"
           >
-            {loading ? "Checking fit & tailoring..." : "Tailor My Resume"}
+            {loading ? "Checking fit & tailoring..." : saving ? "Saving..." : "Tailor My Resume"}
           </button>
         </div>
 
         <AnimatePresence>
-          {result && matchStyle && (
+          {busy && (
             <motion.div
-              initial={{ opacity: 0, y: 16 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
-              className="mt-5 space-y-4"
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.25 }}
+              className="mt-4 flex items-center gap-3 bg-white rounded-xl border-2 border-[#1B2A4A]/8 px-4 py-3"
             >
-              {/* Match-level banner — redesigned: left accent bar, a solid
-                  colored icon badge instead of a bare glyph, and the level
-                  name as a small pill rather than a plain heading, so it
-                  reads as a status component rather than placeholder text. */}
               <motion.div
-                initial={{ scale: 0.97, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ duration: 0.3 }}
-                className={`relative overflow-hidden rounded-2xl ${matchStyle.bg} pl-5 pr-5 py-5`}
-              >
-                <span className={`absolute left-0 top-0 bottom-0 w-1.5 ${matchStyle.accent}`} />
-                <div className="flex items-start gap-3">
-                  <div className={`shrink-0 w-9 h-9 rounded-full ${matchStyle.iconBg} flex items-center justify-center`}>
-                    <matchStyle.Icon className="w-5 h-5 text-white" strokeWidth={2.5} />
-                  </div>
-                  <div>
-                    <span className={`inline-block text-xs font-bold uppercase tracking-wide ${matchStyle.text} mb-1`}>
-                      {result.matchLevel}
-                    </span>
-                    <p className={`text-sm ${matchStyle.text} opacity-90 leading-relaxed`}>
-                      {result.matchNote}
-                    </p>
-                  </div>
-                </div>
-              </motion.div>
-
-              <div className="bg-white rounded-2xl border-2 border-[#1B2A4A]/8 shadow-sm p-6">
-                <h2 className="text-lg font-semibold text-[#0F1E38] mb-3">Tailored Bullet Points</h2>
-                <ul className="space-y-2 mb-6">
-                  {result.bulletPoints.map((point, i) => (
-                    <motion.li
-                      key={i}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.08 }}
-                      className="flex gap-2 text-sm text-[#0F1E38]"
-                    >
-                      <span className="text-[#1170CD] mt-0.5">•</span>
-                      <span>{point}</span>
-                    </motion.li>
-                  ))}
-                </ul>
-
-                <h2 className="text-lg font-semibold text-[#0F1E38] mb-2">Cover Message</h2>
-                <p className="text-sm text-[#425066] leading-relaxed mb-5">{result.introMessage}</p>
-
-                {/* AI-content disclaimer — deliberately neutral/quiet styling,
-                    not alarming like the match banner above, since this is a
-                    standing reminder rather than a situational warning. */}
-                <div className="flex items-start gap-2 bg-[#1B2A4A]/[0.04] rounded-lg px-3.5 py-3">
-                  <Sparkles className="w-4 h-4 text-[#6B7A90] shrink-0 mt-0.5" />
-                  <p className="text-xs text-[#6B7A90] leading-relaxed">
-                    AI-generated content. Review for accuracy, tone, and truthfulness before
-                    using it in an actual application — Kursoha tailors based on your profile,
-                    but you know your experience best.
-                  </p>
-                </div>
-              </div>
+                className="w-2.5 h-2.5 rounded-full bg-[#1170CD]"
+                animate={{ scale: [1, 1.4, 1], opacity: [1, 0.5, 1] }}
+                transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
+              />
+              <p className="text-sm text-[#425066]">
+                {loading ? "Checking fit against your profile..." : "Saving your tailored resume..."}
+              </p>
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Step 7 — Review: the tailored content laid out as a real resume. */}
-        {result && profile && (
-          <div className="mt-8">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
-              <div>
-                <h2 className="text-lg font-semibold text-[#0F1E38]">Review your resume</h2>
-                <p className="text-sm text-[#425066]">
-                  This is how your resume will look. Check every line before you download.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="shrink-0 inline-flex items-center justify-center gap-2 w-full sm:w-auto bg-[#1170CD] hover:bg-[#0F5FB3] text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors"
-              >
-                <Printer className="w-4 h-4" />
-                Download PDF
-              </button>
-            </div>
-
-            <div className="rounded-xl bg-[#1B2A4A]/[0.06] p-2 sm:p-4">
-              <ResumePreview>
-                <Template1 data={{ ...profile, highlights: result.bulletPoints }} />
-              </ResumePreview>
-            </div>
-            <p className="text-xs text-[#6B7A90] mt-2">
-              In the print dialog, choose &quot;Save as PDF&quot; and turn off headers and footers.
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* Print only the resume sheet. */}
-      <style>{`
-        @media print {
-          @page { margin: 0; size: letter; }
-          body * { visibility: hidden !important; }
-          #resume-sheet, #resume-sheet * { visibility: visible !important; }
-          #resume-frame { height: auto !important; overflow: visible !important; }
-          #resume-scaler { transform: none !important; width: auto !important; }
-          #resume-sheet { position: absolute; left: 0; top: 0; box-shadow: none !important; }
-        }
-      `}</style>
+      </motion.div>
     </div>
   )
 }

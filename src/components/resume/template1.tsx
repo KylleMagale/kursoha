@@ -1,12 +1,4 @@
 // src/components/resume/template1.tsx
-//
-// Template 1 — "Business Operations" layout (matches public/resume-templates/template1.jpg).
-// Single column, sans-serif, navy accents. ATS-safe: real text, no tables/icons/images.
-//
-// Every field except fullName is optional. A section only renders when it has
-// content, so the resume never shows invented or empty blocks. Today's profile
-// only has free-text skills and work history; the structured fields (headline,
-// summary, experience[], education[], ...) light up once onboarding collects them.
 
 export interface ExperienceEntry {
   title: string
@@ -28,22 +20,16 @@ export interface ResumeData {
   email?: string
   phone?: string
   location?: string
-  /** e.g. ["linkedin.com/in/name", "github.com/name"] */
   links?: string[]
-  /** Job title line under the name. */
   headline?: string
   tagline?: string
   summary?: string
-  /** Free-text skills from onboarding (comma / line separated). */
   skills?: string
-  /** Structured jobs. When present, used instead of workHistory text. */
   experience?: ExperienceEntry[]
-  /** Fallback: free-text work history exactly as the user typed it. */
   workHistory?: string
-  /** AI-tailored bullets, shown when there is no structured experience. */
   highlights?: string[]
   education?: EducationEntry[]
-  /** e.g. ["Citizenship: Filipino", "Languages: English, Filipino"] */
+  certifications?: string[]
   additional?: string[]
 }
 
@@ -114,28 +100,28 @@ export default function Template1({ data }: { data: ResumeData }) {
       className="w-[8.5in] min-h-[11in] px-[0.75in] py-[0.7in] shadow-md font-sans"
       style={{ background: "#FBFAF7", color: INK }}
     >
-      <header>
-        <h1 className="text-[36px] font-extrabold uppercase leading-none tracking-tight">
+      <header className="text-center">
+        <h1 className="text-[32px] font-extrabold uppercase leading-none tracking-tight">
           {data.fullName}
         </h1>
         {data.headline && (
-          <p className="text-[19px] font-bold mt-3" style={{ color: NAVY }}>
+          <p className="text-[17px] font-bold mt-2.5" style={{ color: NAVY }}>
             {data.headline}
           </p>
         )}
         {data.tagline && (
-          <p className="text-[15px] mt-1" style={{ color: MUTED }}>
+          <p className="text-[14px] mt-1" style={{ color: MUTED }}>
             {data.tagline}
           </p>
         )}
-        <div className="mt-4 mb-3" style={{ height: 4, background: NAVY }} />
+        <div className="mt-3.5 mb-3 mx-auto" style={{ height: 3, background: NAVY, width: "100%" }} />
         {contactLine && (
-          <p className="text-[13px]" style={{ color: MUTED }}>
+          <p className="text-[12.5px]" style={{ color: MUTED }}>
             {contactLine}
           </p>
         )}
         {linksLine && (
-          <p className="text-[13px] mt-1.5" style={{ color: MUTED }}>
+          <p className="text-[12.5px] mt-1" style={{ color: MUTED }}>
             {linksLine}
           </p>
         )}
@@ -169,13 +155,24 @@ export default function Template1({ data }: { data: ResumeData }) {
           <div className="space-y-4">
             {data.experience!.map((job, i) => (
               <div key={i}>
-                <h3 className="text-[17px] font-bold leading-tight">
-                  {job.title}
-                  {job.company ? `  |  ${job.company}` : ""}
-                </h3>
-                {joinMeta([job.location, job.period]) && (
-                  <Meta>{joinMeta([job.location, job.period])}</Meta>
-                )}
+                <div className="flex items-baseline justify-between gap-3">
+                  <h3 className="text-[16px] font-bold leading-tight">{job.title}</h3>
+                  {job.period && (
+                    <span className="text-[12.5px] shrink-0" style={{ color: MUTED }}>
+                      {job.period}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                  <p className="text-[13.5px] font-medium" style={{ color: NAVY }}>
+                    {job.company}
+                  </p>
+                  {job.location && (
+                    <span className="text-[12px] shrink-0" style={{ color: MUTED }}>
+                      {job.location}
+                    </span>
+                  )}
+                </div>
                 <Bullets items={job.bullets} />
               </div>
             ))}
@@ -213,6 +210,21 @@ export default function Template1({ data }: { data: ResumeData }) {
               </div>
             ))}
           </div>
+        </Section>
+      )}
+
+      {(data.certifications?.length ?? 0) > 0 && (
+        <Section title="Certifications">
+          <ul className="space-y-1">
+            {data.certifications!.map((cert, i) => (
+              <li key={i} className="flex gap-2.5 text-[14px]" style={{ color: INK }}>
+                <span aria-hidden className="mt-[1px]" style={{ color: DOT }}>
+                  •
+                </span>
+                <span>{cert}</span>
+              </li>
+            ))}
+          </ul>
         </Section>
       )}
 

@@ -2,18 +2,6 @@ import { NextRequest, NextResponse } from "next/server"
 import Groq from "groq-sdk"
 import { createClient } from "@/utils/supabase/server"
 
-// Place this file at: src/app/api/tailor/route.ts
-//
-// Required environment variables:
-// GROQ_API_KEY=gsk_...
-// GROQ_MODEL=openai/gpt-oss-20b
-//   (NOT 120b — it has a confirmed Groq bug where response_format:
-//   json_schema is silently ignored, returning free-form text instead
-//   of JSON. 20b correctly honors the schema.)
-//
-// Install:
-// npm install groq-sdk
-
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 })
@@ -24,24 +12,48 @@ interface TailorRequestBody {
 
 type MatchLevel = "Strong Match" | "Partial Match" | "Limited Match"
 
+interface JobInput {
+  title?: string
+  company?: string
+  location?: string
+  period?: string
+  description?: string
+}
+
 interface TailorResult {
   matchLevel: MatchLevel
   matchNote: string
-  bulletPoints: string[]
+  experience: { bullets: string[] }[]
   introMessage: string
 }
 
 function buildTailoringPrompt(
   profile: Record<string, unknown>,
+  jobs: JobInput[],
   jobDescription: string,
 ) {
+  const jobsBlock = jobs.length
+    ? jobs
+        .map(
+          (j, i) => `
+Job ${i + 1}:
+Title: ${j.title || "Not provided"}
+Company: ${j.company || "Not provided"}
+Location: ${j.location || "Not provided"}
+Dates: ${j.period || "Not provided"}
+Description (from applicant, in their own words): ${j.description || "Not provided"}`,
+        )
+        .join("\n")
+    : "No work experience provided."
+
   const baseInstructions = `
 You are a resume-tailoring assistant.
 
 Your job is to (1) honestly assess how well a candidate's profile matches
-a job description, and (2) tailor resume content accordingly — without
-ever inventing facts, and without using stronger language or framing to
-make a weak match look closer than it actually is.
+a job description, and (2) tailor resume bullet points for EACH of the
+candidate's jobs accordingly — without ever inventing facts, and without
+using stronger or more specialized language than the profile actually
+supports.
 
 ==================================================
 CRITICAL TRUTHFULNESS RULES
@@ -56,15 +68,15 @@ CRITICAL TRUTHFULNESS RULES
 3. NEVER invent, assume, infer, exaggerate, or upgrade candidate facts.
 
 4. You may rephrase, shorten, combine, or emphasize information that is
-   explicitly present in the applicant profile.
+   explicitly present in that SPECIFIC job's own description field.
 
 5. You MUST NOT add a tool, software, platform, system, technology,
    methodology, certification, industry, or qualification unless it is
-   explicitly supported by the applicant profile.
+   explicitly supported by that job's own description.
 
-6. You MUST NOT claim that a previous employer was a BPO, call center,
-   healthcare company, financial company, IT company, etc. unless the
-   applicant profile explicitly establishes that industry.
+6. You MUST NOT claim that an employer was a BPO, call center, healthcare
+   company, financial company, IT company, etc. unless that job's own
+   description explicitly establishes that industry.
 
 7. Target role preferences are NOT evidence of previous experience.
 
@@ -87,91 +99,34 @@ CRITICAL TRUTHFULNESS RULES
 DON'T FORCE A MATCH — WORDING DISCIPLINE
 ==================================================
 
-Inventing facts is not the only way to mislead a reader. Using STRONGER,
-MORE SENIOR, or MORE SPECIALIZED language than the profile actually
-supports is ALSO a truthfulness violation, even when every individual
-word is technically about something the candidate really did.
+Using STRONGER, MORE SENIOR, or MORE SPECIALIZED language than a job's
+own description actually supports is ALSO a truthfulness violation, even
+when every individual word is technically about something the candidate
+really did.
 
 If the candidate's skills, experience, or target role do not
-substantially match the job requirements, clearly reflect that
-mismatch in tone instead of trying to make the candidate appear
-qualified. Only generate resume bullets from facts supported by the
-user's profile. Never infer or invent technical skills, industry
-experience, achievements, tools, certifications, work arrangements, or
-qualifications — and never reach for job-posting vocabulary just
-because it sounds more impressive than the candidate's own words.
-
-Examples of wording that goes too far, even without inventing a new
-fact outright:
-
-- Profile says "resolved customer concerns" ->
-  Do NOT write "troubleshot complex customer issues" (stronger,
-  more technical framing than the original).
-- Profile says "updated customer records" ->
-  Do NOT write "maintained company systems" (vaguer, sounds more
-  senior/technical than what was actually described).
-- Profile has no stated history of remote work, only a stated
-  timezone/WFH PREFERENCE ->
-  Do NOT write "experienced in a remote, cross-time-zone environment"
-  (a stated preference is not a stated history).
-- In a cover message, do NOT write anything implying the candidate is
-  positioned to contribute to a role far outside their background
-  (e.g. telling a Senior Software Engineer hiring manager the candidate
-  is eager to "contribute to engineering projects" when the candidate
-  has no software development experience in their profile).
-
-When the match is weak, the safer, more honest choice is plainer
-language that stays close to the candidate's actual own words — not a
-more "optimized-sounding" rewrite.
+substantially match the job requirements, clearly reflect that mismatch
+in tone instead of trying to make the candidate appear qualified. Never
+reach for job-posting vocabulary just because it sounds more impressive
+than the candidate's own words.
 
 ==================================================
 SKILLS ARE NOT DUTIES — DON'T INVENT DETAIL
 ==================================================
 
 A line in the Skills list is a competency claim, not a description of
-specific day-to-day duties. If Work History does not elaborate on HOW
-a skill was used (which platforms, what workflow, what frequency),
-you MUST NOT invent that detail — even if the job description happens
-to describe exactly that kind of detail for the same general skill.
-
-Example:
-SKILLS: "Social media management" (no elaboration anywhere in Work History)
-JOB: "Monitor and respond to comments and DMs across social platforms
-in a timely, on-brand manner."
-
-INCORRECT:
-"Managed social media accounts, monitoring comments and messages and
-ensuring timely, on-brand responses."
-(This borrows the JOB POSTING's specific operational language to fill
-in detail the profile never provided.)
-
-CORRECT:
-"Applied social media management skills to support brand communication
-and online presence."
-(Stays exactly as general as the profile's own one-line claim.)
+specific day-to-day duties. If a job's own description does not elaborate
+on HOW a skill was used, you MUST NOT invent that detail — even if the
+target job description happens to describe exactly that kind of detail.
 
 ==================================================
 DON'T MERGE FACTS ACROSS DIFFERENT JOBS
 ==================================================
 
-If a tool, method, or detail is stated in connection with ONE job in
-Work History, do not attach it to a DIFFERENT job's tasks, even if
-both facts are individually true.
-
-Example:
-WORK HISTORY:
-Job A: "Updated customer records and documented interactions accurately."
-Job B (different employer): "Prepared reports and spreadsheets using
-Microsoft Office and Google Workspace."
-
-INCORRECT:
-"Updated customer records and documented interactions accurately using
-Microsoft Office and Google Workspace tools."
-(Merges a tool from Job B into a task from Job A — the profile never
-states those tools were used for that task.)
-
-CORRECT: keep each tool/method attached only to the job it was actually
-stated alongside.
+Each job's bullets must be built ONLY from that job's own description
+field above. Never borrow a tool, method, or detail stated under a
+DIFFERENT job and attach it to this one, even if both facts are
+individually true of the candidate.
 
 ==================================================
 MATCH LEVEL CLASSIFICATION
@@ -182,24 +137,20 @@ applicant profile and the job description into exactly one of:
 
 - "Strong Match": most of the job's core requirements are directly
   supported by the applicant's actual skills and work history.
-- "Partial Match": there is real, genuine overlap (transferable skills,
-  some matching responsibilities) but also clear gaps in core
-  requirements.
-- "Limited Match": the job's core requirements (e.g. a specific
-  technical discipline, seniority level, or industry) are not
-  established anywhere in the applicant profile. Any overlap is
-  incidental or very general (e.g. "communication," "teamwork").
+- "Partial Match": there is real, genuine overlap but also clear gaps
+  in core requirements.
+- "Limited Match": the job's core requirements are not established
+  anywhere in the applicant profile. Any overlap is incidental or very
+  general (e.g. "communication," "teamwork").
 
-A large mismatch in target role type (e.g. profile targets VA/BPO/admin
-work, job is a specialized technical or senior role) is strong evidence
-toward "Limited Match," even if a few soft skills overlap.
+A large mismatch in target role type is strong evidence toward "Limited
+Match," even if a few soft skills overlap.
 
-Write a one-to-two sentence "matchNote" explaining the classification
-in plain language the candidate can act on — naming the specific gap(s)
-if the match is Partial or Limited.
+Write a one-to-two sentence "matchNote" explaining the classification in
+plain language the candidate can act on.
 
 ==================================================
-JOB DESCRIPTION
+JOB DESCRIPTION (TARGET)
 ==================================================
 
 ${jobDescription}
@@ -210,9 +161,6 @@ APPLICANT PROFILE
 
 Skills:
 ${profile.skills_summary ?? "Not provided"}
-
-Work History:
-${profile.work_history ?? "Not provided"}
 
 Target Market:
 ${profile.target_market ?? "Not provided"}
@@ -229,31 +177,30 @@ ${profile.timezone_overlap ?? "Not provided"}
 Expected Salary:
 ${profile.expected_salary ?? "Not provided"}
 
+Work Experience (tailor bullets for EACH job below, in this exact order):
+${jobsBlock}
+
 ==================================================
 TARGET MARKET
 ==================================================
 
-If Target Market is "Local PH":
-- Use natural Philippine professional resume language.
-- If an expected salary is explicitly provided, it may be expressed in PHP.
-- Do not invent salary expectations, onsite availability, or local availability.
+If Target Market is "Local PH": use natural Philippine professional
+resume language. If an expected salary is explicitly provided, it may be
+expressed in PHP. Do not invent salary expectations or onsite availability.
 
-If Target Market is "Global Remote":
-- Use concise international professional language.
-- Do not include age, civil status, religion, or photo references.
-- Mention timezone, remote availability, or work authorization ONLY if
-  explicitly provided in the profile — and never state a stated
-  PREFERENCE as if it were stated EXPERIENCE.
+If Target Market is "Global Remote": use concise international
+professional language. Do not include age, civil status, religion, or
+photo references. Mention timezone or remote availability ONLY if
+explicitly provided in the profile — never state a stated PREFERENCE as
+if it were stated EXPERIENCE.
 
 ==================================================
 BPO / CALL CENTER TARGETING
 ==================================================
 
-If Target Role Type is "BPO", targeting BPO does NOT mean the applicant
-has BPO experience. Only emphasize customer service, communication, or
-support-related experience that is actually present in the profile. Do
-NOT claim previous BPO/call-center experience, shift availability, or
-English proficiency unless explicitly supported by the profile.
+If Target Role Type is "BPO", that does NOT mean the applicant has BPO
+experience. Only emphasize what each job's own description actually
+supports.
 
 ==================================================
 OUTPUT REQUIREMENTS
@@ -262,35 +209,26 @@ OUTPUT REQUIREMENTS
 Produce, in this order:
 
 1. matchLevel — exactly one of "Strong Match", "Partial Match", "Limited Match".
-
 2. matchNote — 1-2 plain-language sentences explaining the classification.
-
-3. 3-4 tailored resume bullet points. Each bullet must:
-   - Be ATS-friendly, use a strong-but-TRUTHFUL action verb.
-   - Be directly supported by the applicant profile, in wording no
-     stronger or more specialized than the profile's own language.
-   - Emphasize whatever genuine overlap exists with the job description.
-   - For a Limited Match, stay close to the candidate's actual words —
-     do not reach for the job posting's vocabulary.
-
+3. experience — an array with EXACTLY ${jobs.length} item(s), one per job
+   listed above, IN THE SAME ORDER. Each item has a "bullets" array of
+   2-4 ATS-friendly, TRUTHFUL bullet points built only from that job's
+   own description field. Do not include the job title, company, or
+   dates in the bullets themselves — only the duty/achievement text.
 4. introMessage — 2-4 sentences. For a Strong or Partial Match, this can
    express genuine interest in the role. For a Limited Match, this must
    NOT imply the candidate is positioned to perform the job's core
-   function — it may honestly note transferable skills and interest in
-   growth, but must not claim alignment that doesn't exist.
+   function.
 
 ==================================================
 FINAL CHECK BEFORE RESPONDING
 ==================================================
 
 Before producing the JSON, internally verify every factual statement
-AND every word choice:
-
-"Can this exact claim, and this exact level of seniority/specialization
-in wording, be directly supported by the applicant profile?"
-
-If NO: remove or rewrite it in plainer, more literal language.
-If YES: it may be included.
+AND every word choice: "Can this exact claim, and this exact level of
+seniority/specialization in wording, be directly supported by that
+SPECIFIC job's own description?" If NO: remove or rewrite it in plainer,
+more literal language. If YES: it may be included.
 
 Do not explain this process in the output. Return ONLY the requested JSON.
 `.trim()
@@ -298,7 +236,7 @@ Do not explain this process in the output. Return ONLY the requested JSON.
   return baseInstructions
 }
 
-async function callGroq(prompt: string): Promise<string> {
+async function callGroq(prompt: string, jobCount: number): Promise<string> {
   const completion = await groq.chat.completions.create({
     model: process.env.GROQ_MODEL || "openai/gpt-oss-20b",
 
@@ -333,26 +271,36 @@ async function callGroq(prompt: string): Promise<string> {
             matchNote: {
               type: "string",
             },
-            bulletPoints: {
+            experience: {
               type: "array",
-              minItems: 3,
-              maxItems: 4,
+              minItems: jobCount,
+              maxItems: jobCount,
               items: {
-                type: "string",
+                type: "object",
+                properties: {
+                  bullets: {
+                    type: "array",
+                    minItems: 2,
+                    maxItems: 4,
+                    items: { type: "string" },
+                  },
+                },
+                required: ["bullets"],
+                additionalProperties: false,
               },
             },
             introMessage: {
               type: "string",
             },
           },
-          required: ["matchLevel", "matchNote", "bulletPoints", "introMessage"],
+          required: ["matchLevel", "matchNote", "experience", "introMessage"],
           additionalProperties: false,
         },
       },
     },
 
     temperature: 0.4,
-    max_tokens: 1024,
+    max_tokens: 1536,
   })
 
   return completion.choices[0]?.message?.content ?? ""
@@ -360,7 +308,7 @@ async function callGroq(prompt: string): Promise<string> {
 
 const VALID_MATCH_LEVELS: MatchLevel[] = ["Strong Match", "Partial Match", "Limited Match"]
 
-function parseTailorResult(raw: string): TailorResult | null {
+function parseTailorResult(raw: string, jobCount: number): TailorResult | null {
   try {
     const cleaned = raw
       .replace(/^```json\s*/i, "")
@@ -375,25 +323,29 @@ function parseTailorResult(raw: string): TailorResult | null {
       typeof parsed !== "object" ||
       !VALID_MATCH_LEVELS.includes(parsed.matchLevel) ||
       typeof parsed.matchNote !== "string" ||
-      !Array.isArray(parsed.bulletPoints) ||
+      !Array.isArray(parsed.experience) ||
+      parsed.experience.length !== jobCount ||
       typeof parsed.introMessage !== "string"
     ) {
       return null
     }
 
-    const bulletPoints = parsed.bulletPoints.filter(
-      (item: unknown): item is string =>
-        typeof item === "string" && item.trim().length > 0,
-    )
+    const experience = parsed.experience.map((job: unknown) => {
+      if (!job || typeof job !== "object" || !Array.isArray((job as { bullets?: unknown }).bullets)) {
+        return null
+      }
+      const bullets = (job as { bullets: unknown[] }).bullets.filter(
+        (b): b is string => typeof b === "string" && b.trim().length > 0,
+      )
+      return bullets.length > 0 ? { bullets } : null
+    })
 
-    if (bulletPoints.length < 3 || bulletPoints.length > 4) {
-      return null
-    }
+    if (experience.some((e: unknown) => e === null)) return null
 
     return {
       matchLevel: parsed.matchLevel,
       matchNote: parsed.matchNote.trim(),
-      bulletPoints,
+      experience,
       introMessage: parsed.introMessage.trim(),
     }
   } catch {
@@ -444,17 +396,24 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const prompt = buildTailoringPrompt(profile as Record<string, unknown>, trimmedJobDescription)
+    const jobs: JobInput[] = Array.isArray(profile.work_experience) ? profile.work_experience : []
 
-    let rawResponse = await callGroq(prompt)
-    let result = parseTailorResult(rawResponse)
+    if (jobs.length === 0) {
+      return NextResponse.json(
+        { error: "Add at least one job in Onboarding before tailoring a resume." },
+        { status: 400 },
+      )
+    }
 
-    // One retry if the first response didn't come back as valid JSON —
-    // cheap insurance against an occasional malformed response.
+    const prompt = buildTailoringPrompt(profile as Record<string, unknown>, jobs, trimmedJobDescription)
+
+    let rawResponse = await callGroq(prompt, jobs.length)
+    let result = parseTailorResult(rawResponse, jobs.length)
+
     if (!result) {
       console.warn("First tailor attempt unparseable, retrying once.")
-      rawResponse = await callGroq(prompt)
-      result = parseTailorResult(rawResponse)
+      rawResponse = await callGroq(prompt, jobs.length)
+      result = parseTailorResult(rawResponse, jobs.length)
     }
 
     if (!result) {

@@ -7,13 +7,40 @@ import { createClient } from "@/utils/supabase/client"
 
 // Place this file at: src/app/onboarding/page.tsx
 
+export interface JobEntryForm {
+  title: string
+  company: string
+  location: string
+  period: string
+  description: string
+}
+
+const emptyJobEntry = (): JobEntryForm => ({
+  title: "",
+  company: "",
+  location: "",
+  period: "",
+  description: "",
+})
+
+interface EducEntryForm {
+  degree: string
+  school: string
+  location: string
+  year: string
+}
+
+const emptyEducEntry = (): EducEntryForm => ({ degree: "", school: "", location: "", year: "" })
+
 type FormState = {
   full_name: string
   phone: string
   expected_salary: string
   notice_period: string
   skills_summary: string
-  work_history: string
+  work_experience: JobEntryForm[]
+  education: EducEntryForm[]
+  certifications: string
   target_market: "Local PH" | "Global Remote"
   timezone_overlap: string
   sss_status: string
@@ -30,7 +57,9 @@ const initialState: FormState = {
   expected_salary: "",
   notice_period: "30 Days Rendering",
   skills_summary: "",
-  work_history: "",
+  work_experience: [emptyJobEntry()],
+  education: [],
+  certifications: "",
   target_market: "Local PH",
   timezone_overlap: "",
   sss_status: "Not Provided",
@@ -45,10 +74,6 @@ const STEPS = ["Personal Info", "Skills & Experience", "Target Market"]
 
 type Errors = Partial<Record<keyof FormState, string>>
 
-// Validates only the fields relevant to the given step. Called before
-// advancing to the next step and before final submit — never blocks
-// fields that have a sensible default (notice period, the status
-// dropdowns) since those can never actually be "empty."
 function validateStep(step: number, form: FormState): Errors {
   const errors: Errors = {}
 
@@ -60,7 +85,10 @@ function validateStep(step: number, form: FormState): Errors {
 
   if (step === 1) {
     if (!form.skills_summary.trim()) errors.skills_summary = "List at least a few skills."
-    if (!form.work_history.trim()) errors.work_history = "Add at least one role, even briefly."
+    const firstJob = form.work_experience[0]
+    if (!firstJob || !firstJob.title.trim() || !firstJob.company.trim() || !firstJob.description.trim()) {
+      errors.work_experience = "Add at least one job with a title, company, and what you did."
+    }
   }
 
   if (step === 2) {
@@ -102,13 +130,27 @@ export default function OnboardingPage() {
         console.error(fetchError)
       } else if (data) {
         setProfileId(data.id)
+
+        // Migration path: profiles saved before structured experience existed
+        // only have the old free-text `work_history` column. Carry that
+        // forward as a single job entry so returning users don't lose what
+        // they already wrote — they can split it into real entries from here.
+        const structuredJobs: JobEntryForm[] =
+          Array.isArray(data.work_experience) && data.work_experience.length > 0
+            ? data.work_experience
+            : data.work_history?.trim()
+              ? [{ title: "", company: "", location: "", period: "", description: data.work_history }]
+              : [emptyJobEntry()]
+
         setForm({
           full_name: data.full_name ?? "",
           phone: data.phone ?? "",
           expected_salary: data.expected_salary ?? "",
           notice_period: data.notice_period ?? "30 Days Rendering",
           skills_summary: data.skills_summary ?? "",
-          work_history: data.work_history ?? "",
+          work_experience: structuredJobs,
+          education: Array.isArray(data.education) ? data.education : [],
+          certifications: Array.isArray(data.certifications) ? data.certifications.join("\n") : "",
           target_market: data.target_market ?? "Local PH",
           timezone_overlap: data.timezone_overlap ?? "",
           sss_status: data.sss_status ?? "Not Provided",
@@ -125,7 +167,7 @@ export default function OnboardingPage() {
     loadProfile()
   }, [router, supabase])
 
-  const update = (field: keyof FormState, value: string) => {
+  const update = (field: keyof FormState, value: FormState[keyof FormState]) => {
     setForm((prev) => ({ ...prev, [field]: value }))
     if (errors[field]) {
       setErrors((prev) => {
@@ -135,6 +177,24 @@ export default function OnboardingPage() {
       })
     }
   }
+
+  const updateJob = (index: number, field: keyof JobEntryForm, value: string) => {
+    const next = [...form.work_experience]
+    next[index] = { ...next[index], [field]: value }
+    update("work_experience", next)
+  }
+
+  const addJob = () => update("work_experience", [...form.work_experience, emptyJobEntry()])
+  const removeJob = (index: number) =>
+    update("work_experience", form.work_experience.filter((_, i) => i !== index))
+
+  const updateEduc = (index: number, field: keyof EducEntryForm, value: string) => {
+    const next = [...form.education]
+    next[index] = { ...next[index], [field]: value }
+    update("education", next)
+  }
+  const addEduc = () => update("education", [...form.education, emptyEducEntry()])
+  const removeEduc = (index: number) => update("education", form.education.filter((_, i) => i !== index))
 
   const goNext = () => {
     const stepErrors = validateStep(step, form)
@@ -167,7 +227,25 @@ export default function OnboardingPage() {
       return
     }
 
-    const payload = { ...form, user_id: user.id, email: user.email }
+    const cleanedJobs = form.work_experience.filter(
+      (j) => j.title.trim() || j.company.trim() || j.description.trim()
+    )
+    const cleanedEducation = form.education.filter(
+      (e) => e.degree.trim() || e.school.trim()
+    )
+    const cleanedCertifications = form.certifications
+      .split("\n")
+      .map((c) => c.trim())
+      .filter(Boolean)
+
+    const payload = {
+      ...form,
+      work_experience: cleanedJobs,
+      education: cleanedEducation,
+      certifications: cleanedCertifications,
+      user_id: user.id,
+      email: user.email,
+    }
 
     const { error: saveError } = profileId
       ? await supabase.from("profiles").update(payload).eq("id", profileId)
@@ -276,7 +354,7 @@ export default function OnboardingPage() {
                 <div className="space-y-5">
                   <h2 className="text-xl font-semibold text-[#0F1E38] mb-1">Skills & Experience</h2>
                   <p className="text-sm text-[#425066] mb-5">
-                    Kursoha AI uses this to tailor bullet points to each job.
+                    Kursoha AI tailors bullet points per job, using only what you write below.
                   </p>
 
                   <Field label="Skills Summary" required error={errors.skills_summary}>
@@ -287,12 +365,166 @@ export default function OnboardingPage() {
                       placeholder="React, TypeScript, Node.js, REST APIs, Git..."
                     />
                   </Field>
-                  <Field label="Work History" required error={errors.work_history}>
+
+                  <div>
+                    <label className="block text-sm font-medium text-[#0F1E38] mb-1.5">
+                      Work Experience <span className="text-[#1170CD]">*</span>
+                    </label>
+                    <div className="space-y-4">
+                      {form.work_experience.map((job, i) => (
+                        <div key={i} className="border-2 border-[#1B2A4A]/10 rounded-lg p-4 relative">
+                          {form.work_experience.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeJob(i)}
+                              className="absolute top-3 right-3 text-xs text-red-500 hover:underline"
+                            >
+                              Remove
+                            </button>
+                          )}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-[#425066] mb-1">Job Title</label>
+                              <input
+                                type="text"
+                                value={job.title}
+                                onChange={(e) => updateJob(i, "title", e.target.value)}
+                                className="input"
+                                placeholder="Customer Service Representative"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-[#425066] mb-1">Company</label>
+                              <input
+                                type="text"
+                                value={job.company}
+                                onChange={(e) => updateJob(i, "company", e.target.value)}
+                                className="input"
+                                placeholder="ABC Solutions"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-[#425066] mb-1">Location</label>
+                              <input
+                                type="text"
+                                value={job.location}
+                                onChange={(e) => updateJob(i, "location", e.target.value)}
+                                className="input"
+                                placeholder="Cebu City, Philippines"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-[#425066] mb-1">Dates</label>
+                              <input
+                                type="text"
+                                value={job.period}
+                                onChange={(e) => updateJob(i, "period", e.target.value)}
+                                className="input"
+                                placeholder="Jan 2024 – Present"
+                              />
+                            </div>
+                          </div>
+                          <div className="mt-3">
+                            <label className="block text-xs font-medium text-[#425066] mb-1">
+                              What did you do here?
+                            </label>
+                            <textarea
+                              value={job.description}
+                              onChange={(e) => updateJob(i, "description", e.target.value)}
+                              rows={4}
+                              className="input"
+                              placeholder={"Assisted customers via phone, email, and chat\nResolved issues and documented interactions"}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {errors.work_experience && (
+                      <p className="text-xs text-red-500 mt-1">{errors.work_experience}</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={addJob}
+                      className="mt-3 text-sm font-medium text-[#1170CD] hover:underline"
+                    >
+                      + Add another job
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-[#0F1E38] mb-1.5">
+                      Education <span className="text-[#425066] font-normal">(optional)</span>
+                    </label>
+                    <div className="space-y-3">
+                      {form.education.map((ed, i) => (
+                        <div key={i} className="border-2 border-[#1B2A4A]/10 rounded-lg p-4 relative">
+                          <button
+                            type="button"
+                            onClick={() => removeEduc(i)}
+                            className="absolute top-3 right-3 text-xs text-red-500 hover:underline"
+                          >
+                            Remove
+                          </button>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-[#425066] mb-1">Degree</label>
+                              <input
+                                type="text"
+                                value={ed.degree}
+                                onChange={(e) => updateEduc(i, "degree", e.target.value)}
+                                className="input"
+                                placeholder="Bachelor of Science in Information Technology"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-[#425066] mb-1">School</label>
+                              <input
+                                type="text"
+                                value={ed.school}
+                                onChange={(e) => updateEduc(i, "school", e.target.value)}
+                                className="input"
+                                placeholder="University of San Carlos"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-[#425066] mb-1">Location</label>
+                              <input
+                                type="text"
+                                value={ed.location}
+                                onChange={(e) => updateEduc(i, "location", e.target.value)}
+                                className="input"
+                                placeholder="Cebu City, Philippines"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-[#425066] mb-1">Year</label>
+                              <input
+                                type="text"
+                                value={ed.year}
+                                onChange={(e) => updateEduc(i, "year", e.target.value)}
+                                className="input"
+                                placeholder="Graduated 2022"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addEduc}
+                      className="mt-3 text-sm font-medium text-[#1170CD] hover:underline"
+                    >
+                      + Add education
+                    </button>
+                  </div>
+
+                  <Field label="Certifications (optional, one per line)">
                     <textarea
-                      value={form.work_history}
-                      onChange={(e) => update("work_history", e.target.value)}
-                      className={`input min-h-[140px] ${errors.work_history ? "input-error" : ""}`}
-                      placeholder="Job title, company, dates, and a couple lines about what you did..."
+                      value={form.certifications}
+                      onChange={(e) => update("certifications", e.target.value)}
+                      className="input min-h-[90px]"
+                      placeholder={"Google Analytics Certified\nHubSpot Inbound Marketing Certification"}
                     />
                   </Field>
                 </div>
@@ -464,11 +696,6 @@ function Field({
   )
 }
 
-// Segmented pill-button group — used for every status/preference field.
-// None of these have more than 4 options, so a row of visible buttons is
-// faster to scan and click than opening a native <select> dropdown for
-// each one, and it matches the same visual language as the target-market
-// toggle above it.
 function OptionGroup({
   value,
   onChange,
